@@ -23,22 +23,28 @@ jobs:
     steps:
     - name: Checkout code
       uses: actions/checkout@v3
+
     - name: Install doctl
       uses: digitalocean/action-doctl@v2
       with:
         token: ${{secrets.API_TOKEN_KEY}}
+
     - name: Login to Do Container Registry
       run: doctl registry login --expiry-seconds 1200
+
     - name: Build container image
       working-directory: django_docker
       run: docker build -f Dockerfile \
           -t registry.digitalocean.com/django_docker:latest \
           -t registry.digitalocean.com/django_docker:${GITHUB_SHA::7} \
           .
+
     - name: Push Image
       run: docker push registry.digitalocean.com/django_docker --all-tags
+
     - name: Push Image
       run: doctl kubernetes cluster kubeconfig save --expiry-seconds 1200 ${{env.CLUSTER_NAME}}
+
     - name: Update Deployment secrets
       run: |
         cat << EOF >> .env.prod
@@ -57,10 +63,14 @@ jobs:
         EOF
         kubectl delete secret django-web-env
         kubectl create secret generic web-prod-env --from-env-file=.env.prod
+
     - name: Update Deployment image
       run: kubectl set image web-deployment django-web-deployment=registry.digitalocean.com/django_docker:${GITHUB_SHA::7} # django-web-deployment is container name
+
     - name: Wait for roll out to finish
       run: kubectl rollout status django-web-deployment
+
     - name: Migrate Database Command
       run:  export SINGLE_POD_NAME=$(kubectl get pod -l app=web-deployment -o jsonpath="{.items[0].metadata.name}")
           kubectl exec -it $SINGLE_POD_NAME -- bash /app/migrate.sh
+          kubectl exec -it $SINGLE_POD_NAME -- bash /app/collectstatic.sh
